@@ -11,11 +11,24 @@ html,body{
 }
 
 #circle{
-    width: 10px;
-    height: 10px;
+    transition:all cubic-bezier(0.19, 1, 0.22, 1) 1s;
+    width: 16px;
+    height: 16px;
     position: absolute;
+    background-color: white;
+    border-radius: 50%;
     z-index: 99999;
     
+}
+
+.bounding{
+  width: fit-content;
+  overflow: hidden;
+  /* background-color: red; */
+}
+
+.bounding .boundingelem{
+    transform: translateY(100%);
 }
 
 #main{
@@ -71,6 +84,9 @@ html,body{
 
 .blocktext{
     width: fit-content;
+    display: flex;
+    align-items: end;
+    flex-direction: column;
     
 }
 
@@ -81,6 +97,9 @@ html,body{
 }
 
 #choti{
+    display: flex;
+    flex-direction: column;
+    align-items: end;
     margin-top: 130px;
     padding-right: 35px;
 }
