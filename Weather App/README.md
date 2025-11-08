@@ -1,0 +1,1 @@
+# Created A Weather app to find temperature of the diffrent places using API call from Wheather api

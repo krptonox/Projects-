@@ -1,0 +1,363 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>WeatherSphere — Live Weather Experience</title>
+  <meta name="description" content="Interactive weather landing page with 3D visuals and live data from WeatherAPI">
+  <link rel="icon" href="data:;base64,iVBORw0KGgo="> 
+  <style>
+    :root{
+      --bg:#0b1221;
+      --card: rgba(255,255,255,0.06);
+      --accent:#60a5fa;
+      --glass: rgba(255,255,255,0.04);
+      --muted: rgba(255,255,255,0.6);
+      --glass-border: rgba(255,255,255,0.06);
+    }
+    *{box-sizing:border-box}
+    html,body{height:100%;margin:0;font-family:Inter,ui-sans-serif,system-ui,Segoe UI,Roboto,"Helvetica Neue",Arial}
+    body{background:linear-gradient(180deg,#061226 0%, #0b1630 60%);color:#e6f0ff;overflow:hidden}
+
+    /* Layout */
+    .container{display:grid;grid-template-columns:520px 1fr;gap:28px;padding:40px;height:100vh;align-items:center}
+
+    /* Left card / landing */
+    .card{background:var(--card);backdrop-filter:blur(8px);border:1px solid var(--glass-border);padding:28px;border-radius:14px;box-shadow:0 10px 30px rgba(2,6,23,0.6)}
+    h1{margin:0;font-size:32px;letter-spacing:-0.6px}
+    p.lead{color:var(--muted);margin-top:8px}
+
+    .search-row{display:flex;margin-top:18px;gap:10px}
+    .search-row input{flex:1;padding:12px 14px;border-radius:10px;border:1px solid rgba(255,255,255,0.06);background:transparent;color:inherit;font-size:16px}
+    .search-row button{padding:12px 16px;border-radius:10px;background:linear-gradient(90deg,var(--accent),#4f46e5);border:none;color:white;cursor:pointer}
+
+    .quick{display:flex;gap:8px;margin-top:12px}
+    .chip{background:var(--glass);padding:8px 10px;border-radius:999px;border:1px solid var(--glass-border);cursor:pointer}
+
+    .stats{display:flex;gap:12px;margin-top:18px}
+    .stat{flex:1;background:linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01));padding:12px;border-radius:10px;border:1px solid var(--glass-border)}
+    .muted{color:var(--muted);font-size:13px}
+
+    /* Right side: 3D + weather info overlay */
+    .stage{position:relative;height:80vh;border-radius:14px;overflow:hidden}
+    #three-canvas{width:100%;height:100%;display:block;background:linear-gradient(180deg, rgba(255,255,255,0.02), transparent)}
+
+    .overlay{position:absolute;right:22px;top:22px;background:linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01));padding:14px;border-radius:12px;border:1px solid var(--glass-border);width:320px}
+    .overlay .temp{font-size:48px;margin:0}
+    .overlay .cond{color:var(--muted);margin-top:4px}
+
+    /* Weather animation canvas */
+    #fx-canvas{position:absolute;inset:0;pointer-events:none}
+
+    /* Footer options */
+    .more{margin-top:14px;display:flex;gap:8px;flex-wrap:wrap}
+    .more button{padding:8px 10px;border-radius:8px;border:1px solid var(--glass-border);background:transparent;color:inherit;cursor:pointer}
+
+    /* Responsive */
+    @media (max-width:980px){.container{grid-template-columns:1fr; padding:18px;gap:14px}.stage{height:60vh}.overlay{left:14px;right:14px;width:auto}}
+
+    /* Simple animated icons */
+    .logo{display:flex;align-items:center;gap:10px}
+    .logo .sphere{width:44px;height:44px;border-radius:50%;background:radial-gradient(circle at 30% 20%, #fffb9e, #f59e0b);box-shadow:0 6px 18px rgba(245,158,11,0.18)}
+
+    /* small helpers */
+    .muted-small{color:var(--muted);font-size:13px}
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="card">
+      <div class="logo">
+        <div class="sphere"></div>
+        <div>
+          <h1>WeatherSphere</h1>
+          <p class="lead">Live weather visuals, 3D scenes and animated forecasts — powered by WeatherAPI.</p>
+        </div>
+      </div>
+
+      <div class="search-row">
+        <input id="city-input" placeholder="Enter city name (e.g. London)" value="London">
+        <button id="search-btn">Search</button>
+      </div>
+
+      <div class="quick" aria-hidden>
+        <div class="chip" data-city="New York">New York</div>
+        <div class="chip" data-city="Tokyo">Tokyo</div>
+        <div class="chip" data-city="Mumbai">Mumbai</div>
+        <div class="chip" data-city="Sydney">Sydney</div>
+      </div>
+
+      <div class="stats">
+        <div class="stat">
+          <div class="muted">Feels like</div>
+          <div id="feels" style="font-weight:700">—</div>
+        </div>
+        <div class="stat">
+          <div class="muted">Humidity</div>
+          <div id="humidity" style="font-weight:700">—</div>
+        </div>
+        <div class="stat">
+          <div class="muted">Wind</div>
+          <div id="wind" style="font-weight:700">—</div>
+        </div>
+      </div>
+
+      <div class="more">
+        <button id="toggle-aqi">Toggle Air Quality</button>
+        <button id="toggle-units">Toggle °C / °F</button>
+        <button id="share-btn">Share Link</button>
+        <button id="geo-btn">Use My Location</button>
+      </div>
+
+      <p class="muted-small" style="margin-top:14px">Tip: click quick cities or use geolocation. The right side shows a live 3D scene and animated weather effects.</p>
+    </div>
+
+    <div class="stage card">
+      <canvas id="three-canvas"></canvas>
+      <canvas id="fx-canvas"></canvas>
+
+      <div class="overlay" id="overlay">
+        <div style="display:flex;align-items:center;gap:12px">
+          <img id="cond-icon" src="" alt="" width="64" height="64" style="filter:drop-shadow(0 6px 12px rgba(2,6,23,0.6))">
+          <div>
+            <div id="loc" style="font-weight:700">London</div>
+            <div id="time" class="muted">—</div>
+          </div>
+        </div>
+
+        <h2 class="temp" id="temp">--°C</h2>
+        <div class="cond" id="condition">—</div>
+        <div style="margin-top:12px;display:flex;gap:8px;align-items:center;justify-content:space-between">
+          <div class="muted-small">Air Quality: <span id="aqi">—</span></div>
+          <div class="muted-small">Last updated: <span id="updated">—</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Scripts -->
+  <script src="https://unpkg.com/three@0.157.0/build/three.min.js"></script>
+  <script>
+    // ---------- CONFIG ----------
+    // IMPORTANT: This file already uses the API key you provided in the project. If you want to change it,
+    // edit the API_KEY variable below.
+    const API_KEY = '3a4fbf526d1e40e18b403057250811';
+    const BASE = 'http://api.weatherapi.com/v1/current.json';
+
+    // ---------- UI ELEMENTS ----------
+    const cityInput = document.getElementById('city-input');
+    const searchBtn = document.getElementById('search-btn');
+    const chips = document.querySelectorAll('.chip');
+    const condIcon = document.getElementById('cond-icon');
+    const locLabel = document.getElementById('loc');
+    const tempLabel = document.getElementById('temp');
+    const conditionLabel = document.getElementById('condition');
+    const feels = document.getElementById('feels');
+    const humidity = document.getElementById('humidity');
+    const wind = document.getElementById('wind');
+    const aqiLabel = document.getElementById('aqi');
+    const updated = document.getElementById('updated');
+    const timeLabel = document.getElementById('time');
+
+    const toggleAQI = document.getElementById('toggle-aqi');
+    const toggleUnits = document.getElementById('toggle-units');
+    const shareBtn = document.getElementById('share-btn');
+    const geoBtn = document.getElementById('geo-btn');
+
+    let useFahrenheit = false;
+    let showAQI = true;
+
+    // ---------- FETCH WEATHER ----------
+    async function fetchWeather(q){
+      try{
+        const url = `${BASE}?key=${API_KEY}&q=${encodeURIComponent(q)}&aqi=yes`;
+        const res = await fetch(url);
+        if(!res.ok) throw new Error('Failed to fetch');
+        const data = await res.json();
+        return data;
+      }catch(e){
+        console.error(e);
+        alert('Could not fetch weather for "'+q+'". Check the city name or API key.');
+      }
+    }
+
+    async function updateFor(city){
+      const d = await fetchWeather(city);
+      if(!d) return;
+
+      // basic fields
+      const tempC = d.current.temp_c; const tempF = d.current.temp_f;
+      tempLabel.textContent = useFahrenheit ? Math.round(tempF)+"°F" : Math.round(tempC)+"°C";
+      conditionLabel.textContent = d.current.condition.text;
+      condIcon.src = 'https:'+d.current.condition.icon;
+      locLabel.textContent = `${d.location.name}, ${d.location.country}`;
+      feels.textContent = (useFahrenheit ? Math.round(d.current.feelslike_f)+"°F" : Math.round(d.current.feelslike_c)+"°C");
+      humidity.textContent = d.current.humidity + '%';
+      wind.textContent = d.current.wind_kph + ' kph';
+
+      // AQI may be absent for some plans
+      if(d.current.air_quality){
+        const aq = Math.round(d.current.air_quality['us-epa-index'] || d.current.air_quality['pm2_5'] || 0);
+        aqiLabel.textContent = showAQI ? aq : '—';
+      } else {
+        aqiLabel.textContent = 'N/A';
+      }
+
+      // Times
+      updated.textContent = new Date(d.current.last_updated).toLocaleString();
+      timeLabel.textContent = 'Local: ' + new Date().toLocaleTimeString();
+
+      // trigger visual theme/animations
+      const cond = d.current.condition.text.toLowerCase();
+      setSceneForCondition(cond);
+    }
+
+    // events
+    searchBtn.addEventListener('click', ()=> updateFor(cityInput.value || 'London'));
+    cityInput.addEventListener('keydown', e=>{ if(e.key === 'Enter') updateFor(cityInput.value) });
+    chips.forEach(c=> c.addEventListener('click', ()=>{ cityInput.value = c.dataset.city; updateFor(c.dataset.city) }));
+
+    toggleUnits.addEventListener('click', ()=>{ useFahrenheit = !useFahrenheit; updateFor(cityInput.value); toggleUnits.textContent = useFahrenheit ? 'Showing °F' : 'Showing °C' });
+    toggleAQI.addEventListener('click', ()=>{ showAQI = !showAQI; toggleAQI.textContent = showAQI ? 'Toggle Air Quality' : 'AQI hidden'; updateFor(cityInput.value) });
+
+    shareBtn.addEventListener('click', ()=>{
+      const text = `Weather for ${cityInput.value}: ${tempLabel.textContent} — ${conditionLabel.textContent}`;
+      if(navigator.share){ navigator.share({title:'Weather',text}) } else { navigator.clipboard.writeText(text).then(()=> alert('Copied to clipboard')) }
+    });
+
+    geoBtn.addEventListener('click', ()=>{
+      if(navigator.geolocation){ navigator.geolocation.getCurrentPosition(async pos=>{
+        const q = pos.coords.latitude + ',' + pos.coords.longitude;
+        cityInput.value = q; updateFor(q);
+      }, ()=> alert('Unable to get location')) } else alert('Geolocation not supported');
+    });
+
+    // ---------- THREE.JS Scene (3D objects) ----------
+    const canvas = document.getElementById('three-canvas');
+    const fx = document.getElementById('fx-canvas');
+    fx.width = window.innerWidth; fx.height = window.innerHeight;
+
+    const renderer = new THREE.WebGLRenderer({canvas, antialias:true, alpha:true});
+    const scene = new THREE.Scene();
+    const camera = new THREE.PerspectiveCamera(45, 1, 0.1, 1000);
+    camera.position.set(0,0,6);
+    renderer.setPixelRatio(window.devicePixelRatio);
+
+    // lighting
+    const light = new THREE.DirectionalLight(0xffffff,1.0);
+    light.position.set(5,10,7);
+    scene.add(light);
+    scene.add(new THREE.AmbientLight(0xffffff,0.25));
+
+    // create a rotating globe / sun / cloud group
+    const group = new THREE.Group();
+    scene.add(group);
+
+    const geomSphere = new THREE.SphereGeometry(1.6, 64, 64);
+    const matSun = new THREE.MeshStandardMaterial({emissive:0xffd479, emissiveIntensity:0.6, roughness:0.3, metalness:0.05});
+    const sunMesh = new THREE.Mesh(geomSphere, matSun);
+
+    const matCloud = new THREE.MeshStandardMaterial({color:0xe6eef9, transparent:true, opacity:0.95, roughness:0.9});
+    const cloudMesh = new THREE.Mesh(new THREE.SphereGeometry(1.8, 40, 40), matCloud);
+    cloudMesh.scale.set(1.05,0.85,1);
+
+    const matRain = new THREE.MeshStandardMaterial({color:0x7fb3ff, transparent:true, opacity:0.9});
+    const rainMesh = new THREE.Mesh(new THREE.BoxGeometry(0.05,0.8,0.05), matRain);
+
+    group.add(sunMesh);
+
+    // a simple cloud made of spheres
+    function makeCloud(){
+      const cloud = new THREE.Group();
+      const c1 = new THREE.Mesh(new THREE.SphereGeometry(0.65, 32, 32), matCloud);
+      const c2 = new THREE.Mesh(new THREE.SphereGeometry(0.52, 32, 32), matCloud);
+      const c3 = new THREE.Mesh(new THREE.SphereGeometry(0.4, 32, 32), matCloud);
+      c1.position.set(-0.4,0,0); c2.position.set(0.45,0.08,0); c3.position.set(0,0.35,0);
+      cloud.add(c1,c2,c3);
+      cloud.scale.set(1.6,1.2,1);
+      return cloud;
+    }
+
+    const clouds = makeCloud(); clouds.position.set(0,0,0); clouds.visible=false; group.add(clouds);
+
+    // starfield background
+    const starGeo = new THREE.BufferGeometry();
+    const starCount = 400;
+    const positions = new Float32Array(starCount * 3);
+    for(let i=0;i<starCount;i++){ positions[i*3] = (Math.random()-0.5)*40; positions[i*3+1] = (Math.random()-0.5)*40; positions[i*3+2] = -Math.random()*60; }
+    starGeo.setAttribute('position', new THREE.BufferAttribute(positions,3));
+    const starMat = new THREE.PointsMaterial({size:0.06,transparent:true});
+    const stars = new THREE.Points(starGeo, starMat); scene.add(stars);
+
+    // resize handling
+    function onResize(){
+      renderer.setSize(window.innerWidth - (window.innerWidth>980?540:36), window.innerHeight - 80);
+      camera.aspect = renderer.domElement.clientWidth / renderer.domElement.clientHeight;
+      camera.updateProjectionMatrix();
+      fx.width = window.innerWidth; fx.height = window.innerHeight;
+    }
+    window.addEventListener('resize', onResize);
+    onResize();
+
+    // FX canvas for rain/snow particles
+    const fxCtx = fx.getContext('2d');
+    let particles = [];
+    function makeParticles(kind){
+      particles = [];
+      const count = kind === 'rain' ? 500 : 200;
+      for(let i=0;i<count;i++){
+        particles.push({x:Math.random()*fx.width,y:Math.random()*fx.height,z:Math.random()*1,vy: kind==='rain' ? 6+Math.random()*6 : 1+Math.random()*2, size: kind==='rain' ? 1.4 : 2+Math.random()*2})
+      }
+    }
+    makeParticles('clear');
+
+    let currentWeatherKind = 'clear';
+    function setSceneForCondition(cond){
+      cond = cond.toLowerCase();
+      // basic mapping heuristics
+      if(cond.includes('rain') || cond.includes('drizzle')){
+        currentWeatherKind = 'rain'; clouds.visible=true; sunMesh.visible=false; makeParticles('rain');
+      } else if(cond.includes('snow') || cond.includes('sleet')){
+        currentWeatherKind = 'snow'; clouds.visible=true; sunMesh.visible=false; makeParticles('snow');
+      } else if(cond.includes('cloud') || cond.includes('overcast')){
+        currentWeatherKind = 'clouds'; clouds.visible=true; sunMesh.visible=false; makeParticles('clear');
+      } else {
+        currentWeatherKind = 'sunny'; clouds.visible=false; sunMesh.visible=true; makeParticles('clear');
+      }
+    }
+
+    // animation loop
+    const clock = new THREE.Clock();
+    function animate(){
+      requestAnimationFrame(animate);
+      const t = clock.getElapsedTime();
+      group.rotation.y = t * 0.14;
+      sunMesh.rotation.y = t*0.18;
+      clouds.rotation.y = t*0.12;
+      renderer.render(scene, camera);
+
+      // FX draw
+      fxCtx.clearRect(0,0,fx.width,fx.height);
+      if(currentWeatherKind === 'rain'){
+        fxCtx.globalAlpha = 0.8; fxCtx.lineWidth = 1.2;
+        for(const p of particles){
+          fxCtx.beginPath(); fxCtx.moveTo(p.x, p.y); fxCtx.lineTo(p.x - 2, p.y + p.vy*3); fxCtx.stroke();
+          p.y += p.vy; if(p.y > fx.height){ p.y = -10; p.x = Math.random()*fx.width; }
+        }
+      } else if(currentWeatherKind === 'snow'){
+        fxCtx.globalAlpha = 0.9;
+        for(const p of particles){ fxCtx.beginPath(); fxCtx.arc(p.x, p.y, p.size,0,Math.PI*2); fxCtx.fill(); p.y += p.vy; if(p.y > fx.height){ p.y = -10; p.x = Math.random()*fx.width; } }
+      }
+    }
+    animate();
+
+    // initial fetch
+    updateFor('London');
+
+    // small accessibility: allow clicking overlay to pause fx
+    document.getElementById('overlay').addEventListener('click', ()=>{
+      if(fx.style.display === 'none') fx.style.display='block'; else fx.style.display='none';
+    });
+  </script>
+</body>
+</html>
